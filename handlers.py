@@ -493,7 +493,7 @@ async def handle_irritation(callback: types.CallbackQuery, state: FSMContext):
             "5/6 Насколько этот звук приятен или неприятен?\n\n"
             "🔹 1 — очень неприятен,\n"
             "🔹 3 — нейтрален,\n"
-            "🔹 5 — очень приятен)",
+            "🔹 5 — очень приятен",
             reply_markup=get_scale_keyboard()
         )
     except Exception:
