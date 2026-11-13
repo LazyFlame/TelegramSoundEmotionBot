@@ -28,7 +28,7 @@ async def init_db():
             )
         """)
 
-        # Таблица ответов по звукам (6 шкал)
+        # Таблица ответов по звукам
         await db.execute("""
             CREATE TABLE IF NOT EXISTS answers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +111,23 @@ async def get_user_progress(user_id: int):
             answered_sounds = [row[0] for row in answered_rows]
 
         return playlist, answered_sounds
+
+
+async def get_last_sound_answered_scales_count(user_id: int, sound_id: str) -> int:
+    """Возвращает количество ответов на шкалы для конкретного звука пользователя."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            """
+            SELECT scale_anxiety, scale_action, scale_impulse, scale_irritation, scale_valence, scale_arousal
+            FROM answers WHERE user_id = ? AND sound_id = ?
+            """,
+            (user_id, sound_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return 0
+            return sum(1 for val in row if val is not None)
+
 
 async def mark_test_completed(user_id: int):
     """Отмечает время завершения теста."""

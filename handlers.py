@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from quiz import QuizStates, SOUNDS_DICT, generate_balanced_playlist
+from quiz import QuizStates, SOUNDS_DICT, generate_latin_playlist
 import database as db
 
 router = Router()
@@ -22,26 +22,31 @@ async def cmd_start(message: types.Message, state: FSMContext):
     """Старт, проверка незавершённой сессии или запуск анкетирования."""
     user_id = message.from_user.id
 
-    # Проверяем, есть ли уже данные по этому пользователю в БД
     playlist, answered_sounds = await db.get_user_progress(user_id)
 
     if playlist:
-        # Пользователь уже существует в базе
-        answered_count = len(answered_sounds)
         total_sounds = len(playlist)
+        answered_count = len(answered_sounds)
 
-        if answered_count >= total_sounds:
-            # Тест уже полностью пройден
+        # Проверяем, был ли последний начатый звук полностью оценен (все 6 шкал)
+        current_sound_index = answered_count
+        if answered_count > 0 and answered_count < total_sounds:
+            last_sound_id = playlist[answered_count - 1]
+            scales_count = await db.get_last_sound_answered_scales_count(user_id, last_sound_id)
+
+            if scales_count < 6:
+                # Если отвечено меньше 6 шкал, откатываем индекс назад на этот же звук!
+                current_sound_index = answered_count - 1
+
+        if current_sound_index >= total_sounds:
             await message.answer("Вы уже успешно завершили всё тестирование. Большое спасибо за участие!")
             return
 
-        # Есть незавершённый прогресс — предлагаем продолжить
         await state.clear()
 
-        # Восстанавливаем плейлист и индекс в память FSM
         await state.update_data(
             user_playlist=playlist,
-            current_sound_index=answered_count
+            current_sound_index=current_sound_index
         )
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -51,14 +56,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
         await message.answer(
             f"У вас есть незавершённая сессия тестирования!\n\n"
-            f"Пройдено звуков: <b>{answered_count} из {total_sounds}</b>.\n\n"
+            f"Пройдено звуков: <b>{current_sound_index} из {total_sounds}</b>.\n\n"
             "Хотите продолжить с прерванного места или начать сначала?",
             reply_markup=kb,
             parse_mode="HTML"
         )
         return
 
-    # Если пользователя в базе нет — стандартный старт с согласия
+    # Стандартный старт для нового пользователя...
     await state.clear()
 
     text = (
@@ -224,10 +229,10 @@ async def process_aviation(callback: types.CallbackQuery, state: FSMContext):
 
     english_prompt = (
         "Знаете ли вы английский язык?\n\n"
-        "• <b>Нет</b>\n"
-        "• <b>A1–A2</b> — понимаю отдельные слова\n"
-        "• <b>B1</b> — понимаю общий смысл\n"
-        "• <b>B2–C2</b> — свободно воспринимаю на слух"
+        "🔹 <b>Нет</b>\n"
+        "🔹 <b>A1–A2</b> — понимаю отдельные слова\n"
+        "🔹 <b>B1</b> — понимаю общий смысл\n"
+        "🔹 <b>B2–C2</b> — свободно воспринимаю на слух"
     )
 
     await callback.message.edit_text(english_prompt, reply_markup=kb, parse_mode="HTML")
@@ -249,7 +254,7 @@ async def process_english(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text=str(i), callback_data=f"mood_{i}") for i in range(1, 6)]
     ])
     await callback.message.edit_text(
-        "Как вы оцениваете своё настроение в данный момент?\n\n(1 — подавленное, 3 — нейтральное, 5 — отличное)",
+        "Как вы оцениваете своё настроение в данный момент?\n\n1 — подавленное, 3 — нейтральное, 5 — отличное",
         reply_markup=kb
     )
     await state.set_state(QuizStates.state_mood)
@@ -265,7 +270,7 @@ async def process_state_mood(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text=str(i), callback_data=f"tension_{i}") for i in range(1, 6)]
     ])
     await callback.message.edit_text(
-        "Чувствуете ли вы сейчас внутреннее напряжение или тревогу?\n\n(1 — полностью спокоен, 3 — лёгкое напряжение, 5 — сильно напряжён)",
+        "Чувствуете ли вы сейчас внутреннее напряжение или тревогу?\n\n1 — полностью спокоен, 3 — лёгкое напряжение, 5 — сильно напряжён",
         reply_markup=kb
     )
     await state.set_state(QuizStates.state_tension)
@@ -281,7 +286,7 @@ async def process_state_tension(callback: types.CallbackQuery, state: FSMContext
         [InlineKeyboardButton(text=str(i), callback_data=f"energy_{i}") for i in range(1, 6)]
     ])
     await callback.message.edit_text(
-        "Насколько бодрым и отдохнувшим вы чувствуете себя прямо сейчас?\n\n(1 — сильно уставший, 3 — нейтральное состояние, 5 — полон сил)",
+        "Насколько бодрым и отдохнувшим вы чувствуете себя прямо сейчас?\n\n1 — сильно уставший, 3 — нейтральное состояние, 5 — полон сил",
         reply_markup=kb
     )
     await state.set_state(QuizStates.state_energy)
@@ -352,7 +357,15 @@ async def start_main_test(callback: types.CallbackQuery, state: FSMContext):
 async def begin_first_sound(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    user_playlist = generate_balanced_playlist()
+    user_id = callback.from_user.id
+
+    # Генерируем сбалансированный плейлист по латинскому квадрату
+    user_playlist = generate_latin_playlist(user_id)
+
+    # Сохраняем в БД плейлист в виде строки через запятую
+    playlist_str = ",".join(user_playlist)
+    await db.update_user_playlist(user_id, playlist_str)
+
     await state.update_data(current_sound_index=0, user_playlist=user_playlist)
     await callback.message.delete()
 
@@ -365,7 +378,6 @@ async def send_next_sound_stimulus(message: types.Message, state: FSMContext):
     user_playlist = data["user_playlist"]
 
     if idx >= len(user_playlist):
-        # Удаляем последнее аудио перед финалом, если оно осталось
         old_audio_msg_id = data.get("last_audio_msg_id")
         if old_audio_msg_id:
             try:
@@ -373,7 +385,7 @@ async def send_next_sound_stimulus(message: types.Message, state: FSMContext):
             except Exception:
                 pass
 
-        await message.answer("Большое спасибо! Вы успешно завершили первую часть исследования. Ваши данные сохранены.")
+        await message.answer("Большое спасибо! Вы успешно завершили исследования. Ваши данные сохранены.")
         await state.clear()
         return
 
@@ -400,7 +412,10 @@ async def send_next_sound_stimulus(message: types.Message, state: FSMContext):
 
     # Задаем первый вопрос по шкалам
     msg = await message.answer(
-        "Насколько этот звук вызывает у вас тревогу?\n\n(1 — совсем не вызывает, 5 — вызывает сильную тревогу)",
+        "1/6 Насколько этот звук вызывает у вас тревогу?\n\n"
+        "🔹 1 — совсем не вызывает,\n"
+        "🔹 3 — вызывает лёгкую настороженность,\n"
+        "🔹 5 — вызывает сильную тревогу",
         reply_markup=get_scale_keyboard()
     )
 
@@ -416,10 +431,16 @@ async def handle_anxiety(callback: types.CallbackQuery, state: FSMContext):
     score = int(callback.data.split("_")[1])
     await state.update_data(anxiety=score)
 
-    await callback.message.edit_text(
-        "Насколько этот звук побуждает вас к действию?\n\n(1 — не побуждает, его можно не замечать, 5 — требует немедленно отреагировать)",
-        reply_markup=get_scale_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "2/6 Насколько этот звук побуждает вас к действию?\n\n"
+            "🔹 1 — не побуждает, его можно не замечать,\n"
+            "🔹 3 — привлекает внимание, хочется проверить ситуацию,\n"
+            "🔹 5 — требует немедленно отреагировать",
+            reply_markup=get_scale_keyboard()
+        )
+    except Exception:
+        pass
     await state.set_state(QuizStates.answering_action)
 
 
@@ -429,10 +450,16 @@ async def handle_action(callback: types.CallbackQuery, state: FSMContext):
     score = int(callback.data.split("_")[1])
     await state.update_data(action=score)
 
-    await callback.message.edit_text(
-        "Насколько вам хочется прекратить этот звук?\n\n(1 — совсем не хочется, 5 — очень хочется)",
-        reply_markup=get_scale_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "3/6 Насколько вам хочется прекратить этот звук?\n\n"
+            "🔹 1 — совсем не хочется,\n"
+            "🔹 3 — умеренно, со временем начал бы мешать,\n"
+            "🔹 5 — очень хочется немедленно выключить",
+            reply_markup=get_scale_keyboard()
+        )
+    except Exception:
+        pass
     await state.set_state(QuizStates.answering_impulse)
 
 
@@ -442,10 +469,16 @@ async def handle_impulse(callback: types.CallbackQuery, state: FSMContext):
     score = int(callback.data.split("_")[1])
     await state.update_data(impulse=score)
 
-    await callback.message.edit_text(
-        "Насколько этот звук вас раздражает?\n\n(1 — совсем не раздражает, 5 — сильно раздражает)",
-        reply_markup=get_scale_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "4/6 Насколько этот звук вас раздражает?\n\n"
+            "🔹 1 — совсем не раздражает,\n"
+            "🔹 3 — умеренно раздражает,\n"
+            "🔹 5 — сильно раздражает",
+            reply_markup=get_scale_keyboard()
+        )
+    except Exception:
+        pass
     await state.set_state(QuizStates.answering_irritation)
 
 
@@ -455,10 +488,16 @@ async def handle_irritation(callback: types.CallbackQuery, state: FSMContext):
     score = int(callback.data.split("_")[1])
     await state.update_data(irritation=score)
 
-    await callback.message.edit_text(
-        "Насколько этот звук приятен или неприятен?\n\n(1 — очень неприятен, 3 — нейтрален, 5 — очень приятен)",
-        reply_markup=get_scale_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "5/6 Насколько этот звук приятен или неприятен?\n\n"
+            "🔹 1 — очень неприятен,\n"
+            "🔹 3 — нейтрален,\n"
+            "🔹 5 — очень приятен)",
+            reply_markup=get_scale_keyboard()
+        )
+    except Exception:
+        pass
     await state.set_state(QuizStates.answering_valence)
 
 
@@ -468,10 +507,16 @@ async def handle_valence(callback: types.CallbackQuery, state: FSMContext):
     score = int(callback.data.split("_")[1])
     await state.update_data(valence=score)
 
-    await callback.message.edit_text(
-        "Насколько этот звук вас взбадривает или успокаивает?\n\n(1 — совершенно спокойный, 5 — звук сильно взбодрил)",
-        reply_markup=get_scale_keyboard()
-    )
+    try:
+        await callback.message.edit_text(
+            "6/6 Какое состояние вызывает у вас этот звук — расслабление или всплеск бодрости?\n\n"
+            "🔹 1 — сильно расслабляет,\n"
+            "🔹 3 — не влияет на состояние,\n"
+            "🔹 5 — резко бодрит",
+            reply_markup=get_scale_keyboard()
+        )
+    except Exception:
+        pass
     await state.set_state(QuizStates.answering_arousal)
 
 

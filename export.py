@@ -23,6 +23,8 @@ def export_to_excel():
             u.state_tension AS [Входная Напряженность (1-5)],
             u.state_energy AS [Входная Энергичность (1-5)],
             u.registered_at AS [Дата регистрации],
+            u.completed_at AS [Время завершения теста],
+            u.playlist AS [Порядок звуков],
             a.sound_id AS [Аудиостимул],
             a.scale_anxiety AS [Шкала Тревоги (1-5)],
             a.scale_action AS [Шкала Действия (1-5)],

@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 import database as db
 
-# Список из 24 звуков (замени на реальные имена файлов из папки sounds/)
 SOUNDS_LIST = [f"S{i:02d}.wav" for i in range(1, 25)]
 
 SCALES_CONFIG = [
@@ -36,7 +35,7 @@ async def get_respondent_progress(user_id: int):
     answered_count = await db.get_answered_sounds_count(user_id)
 
     if answered_count >= len(SOUNDS_LIST):
-        return None  # Тест полностью пройден
+        return None
 
     return {
         "index": answered_count,

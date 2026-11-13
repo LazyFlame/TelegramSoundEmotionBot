@@ -23,8 +23,8 @@ async def catch_file(message: types.Message):
         file_name = message.document.file_name or "документ"
 
     if file_id:
-        print(f"\n📂 Файл: {file_name}")
-        print(f"🔑 Telegram file_id: {file_id}\n")
+        print(f"\n Файл: {file_name}")
+        print(f" Telegram file_id: {file_id}\n")
     else:
         print("Пожалуйста, отправьте именно файл или аудио.")
 
