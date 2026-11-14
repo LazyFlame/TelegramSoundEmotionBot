@@ -39,7 +39,11 @@ async def cmd_start(message: types.Message, state: FSMContext):
                 current_sound_index = answered_count - 1
 
         if current_sound_index >= total_sounds:
-            await message.answer("Вы уже успешно завершили всё тестирование. Большое спасибо за участие!")
+            await message.answer(
+                "Вы уже успешно завершили первую часть тестирования! Большое спасибо за участие!\n\n"
+                "Если вы еще не прошли вторую часть, будем рады видеть вас в боте: @sound_speed_reaction_bot",
+                parse_mode="HTML"
+            )
             return
 
         await state.clear()
@@ -385,7 +389,15 @@ async def send_next_sound_stimulus(message: types.Message, state: FSMContext):
             except Exception:
                 pass
 
-        await message.answer("Большое спасибо! Вы успешно завершили исследования. Ваши данные сохранены.")
+        await message.answer(
+            "🎉 <b>Вы успешно завершили первую часть исследования!</b>\n\n"
+            "Огромное спасибо за ваши оценки.\n\n"
+            "👉 Теперь приглашаем вас пройти <b>вторую часть исследования</b>, в которой нужно выполнить 20 простых задачь. "
+            "Это займет всего <b>около 7 минут</b>:"
+            "@sound_speed_reaction_bot\n\n"
+            "Благодарим за ваш вклад в научную работу!",
+            parse_mode="HTML"
+        )
         await state.clear()
         return
 
